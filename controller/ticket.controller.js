@@ -2,6 +2,7 @@ import { status } from "init";
 import Ticket from "../models/ticket.model.js";
 import User from "../models/user.model.js";
 import path from "path"
+import { sendEmail } from "../utils/emailService.js";
 export async function createTicket(req, resp) {
     try {
         const { title, description, priority } = req.body
@@ -33,42 +34,68 @@ export async function createTicket(req, resp) {
         }
 
         // for auto-assign agent
-         const agent = await Ticket.aggregate([
-        {
-            $match:{
-                status:{
-                    $nin:["resolved","closed"]
+        const agent = await Ticket.aggregate([
+            {
+                $match: {
+                    status: {
+                        $nin: ["resolved", "closed"]
+                    }
+                }
+            },
+            {
+                $group: {
+                    _id: "$assignTo",
+                    openticket: {
+                        $sum: 1
+                    }
+                }
+            },
+            {
+                $sort: {
+                    openticket: 1
                 }
             }
-        },
-        {
-            $group:{
-                _id:"$assignTo",
-                openticket:{
-                   $sum:1
-                }
-            }
-        },
-        {
-            $sort:{
-                openticket:1
-            }
-        }
-     ])
-     const leastlodedagent = agent[0]
-     console.log(leastlodedagent);
-     
+        ])
+        const leastlodedagent = agent[0]
+        console.log(leastlodedagent);
+
 
         const ticket = await Ticket.create({
             title,
             description,
             priority,
             createdBy: req.user.id,
-            attachments: req.file.path,
+            attachments: req.file ? [req.file.path] : [],
             responseDeadline,
             resolutionDeadline,
             assignTo: leastlodedagent ? leastlodedagent._id : null
         })
+        try {
+            let assignedagent = null
+            if (leastlodedagent) {
+                assignedagent = await User.findById(leastlodedagent._id)
+            }
+            if (assignagent) {
+                await sendEmail(
+                    assignedagent.email,
+                    console.log(assignedagent.email),
+                    "New Ticket Assigned",
+                    `A new ticket "${ticket.title}" has been assigned to you`
+                )
+            }
+        } catch (err) {
+            console.log("Email failed:", err.message);
+        }
+        try {
+            await sendEmail(
+                req.user.email,
+                "ticket created",
+                "your ticket hasbeen recieed"
+            )
+        } catch (err) {
+            console.log("Email failed:", err.message);
+        }
+
         resp.status(201).json({
             message: "Ticket created",
             data: ticket
@@ -79,6 +106,7 @@ export async function createTicket(req, resp) {
         });
     }
 }
+
 
 export async function getTicket(req, resp) {
     const query = {};
@@ -159,6 +187,12 @@ export async function updatestatus(req, resp) {
             ticket.resolvedAt = new Date()
         }
         await ticket.save()
+        const customer = await User.findById(ticket.createdBy)
+        await sendEmail(
+            customer.email,
+            "Ticket Status Updated",
+            `Your ticket "${ticket.title}" status is now ${ticket.status}`
+        )
         resp.status(200).json({
             message: "Status updated",
             data: ticket
@@ -234,5 +268,5 @@ export const auto_asign = async (req, resp) => {
     //  if(agent.length===0){
     //     return null
     //  }
-    
+
 }

@@ -54,7 +54,7 @@ export async function login(req,resp) {
                 message: "Invalid credentials"
             });
         }
-     const token = jwt.sign({id:user._id,role:user.role},process.env.JWT_SECRET,{expiresIn:"7d"})
+     const token = jwt.sign({id:user._id,role:user.role,email:user.email},process.env.JWT_SECRET,{expiresIn:"7d"})
         resp.cookie("token",token,{httpOnly:true})
        resp.status(200).json({
             message: "Login successful",
